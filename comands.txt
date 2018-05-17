@@ -1,0 +1,138 @@
+-------------------- Create a key-pair --------------------------------------------------------
+aws ec2 create-key-pair --key-name EcsDemoKeyPair --query 'KeyMaterial' --output text > EcsDemoKeyPair.pem
+--> chmod 400 EcsDemoKeyPair.pem
+
+======================== Create the Cluster =====================================
+aws cloudformation create-stack --template-body file://ecs-cluster.template --stack-name DemoEcsClusterStack --capabilities CAPABILITY_IAM --tags Key=Name,Value=ECS --region eu-central-1 --parameters ParameterKey=KeyName,ParameterValue=EcsDemoKeyPair ParameterKey=EcsCluster,ParameterValue=getting-started ParameterKey=AsgMaxSize,ParameterValue=2
+
+ "StackId": "arn:aws:cloudformation:eu-central-1:780462955238:stack/DemoEcsClusterStack/f5399c40-47e0-11e8-bca1-50fafb4f9cae"
+
+======================== Create the Jenkins Server =================================
+aws cloudformation create-stack --template-body file://ecs-jenkins-demo.template --stack-name DemoJenkinsStack --capabilities CAPABILITY_IAM --tags Key=Name,Value=Jenkins --region eu-central-1 --parameters ParameterKey=EcsStackName,ParameterValue=DemoEcsClusterStack
+
+"StackId": "arn:aws:cloudformation:eu-central-1:780462955238:stack/DemoJenkinsStack/496f6150-47e1-11e8-a4b3-50a68ae71462"
+
+======================== Retrieve the public host name of the Jenkins server =====================
+aws ec2 describe-instances --filters "Name=tag-value","Values=DemoJenkinsStack" --region eu-central-1
+
+--> ec2-18-194-235-225.eu-central-1.compute.amazonaws.com
+
+========================= SSH into the instance, and =================================
+==============  then copy the temp password from /var/lib/jenkins/secrets/initialAdminPassword ========0
+ssh -i CICDKeyPair ec2-user@ec2-18-194-235-225.eu-central-1.compute.amazonaws.com
+
+-->sudo cat /var/lib/jenkins/secrets/initialAdminPassword --> 0ef7d14dc6ad49cf96ea5f08e9f71acd
+-->logout
+
+========================= Create an Amazon ECR registry ================================
+aws ecr create-repository --repository-name ecs-demo --region eu-central-1
+--> "repositoryArn": "arn:aws:ecr:eu-central-1:780462955238:repository/ecs-demo",
+--> "repositoryUri": "780462955238.dkr.ecr.eu-central-1.amazonaws.com/ecs-demo"
+
+============================ Login to the registry ========================
+aws ecr get-login --no-include-email | cmd
+
+aws ecr get-login --no-include-email
+============================= Step 4: Configure Jenkins First Run ========================
+1. Paste the public host name of the Jenkins server into a browser.
+----> ec2-18-194-235-225.eu-central-1.compute.amazonaws.com
+
+2. Paste the password
+----> 0ef7d14dc6ad49cf96ea5f08e9f71acd
+3. Choose Install suggested plugins.
+4. Create your first admin user
+5. Save and finish
+
+
+============================== Install Cloudbees Docker build and publish plugin ====================
+1. Go to Manage Jenkins - Manage Plugins -->available
+2. Install Cloudbees Docker build and publish plugin & Amazon ECR plugin
+3. Restart after installation
+
+
+================================ Create and Import SSH Keys for GitHub =======
+1.
+ssh-keygen -t rsa -b 4096 -C adanlessossi@hotmail.com
+2.
+Go to GitHub -> Settings -> SSH and GPG keys -> New SSH key -> Add SSH key
+
+git commit -m "First commit"
+
+git remote add origin 'https://github.com/adanlessossi/ecs-demo.git'
+
+git push -u origin master
+
+======================= Enable webhooks on your repository so Jenkins is notified when files are pushed ==
+1. Browse to your GitHub repository -> Settings -> Integration Services 
+2. Add Service ->"Jenkins (github plugin)"
+3. In Jenkins URL type in the Jenkins Server URL prepended by your Jenkins user name and password:
+     http://jadmin:Kathmandu6$@ec2-18-194-235-225.eu-central-1.compute.amazonaws.com/github-webhook/
+
+4. Update the service
+
+================= Configure Jenkins ==============================
+1. Manage Jenkins -> Choose New Item -> freestyle project -> OK
+2. Under the source code management heading, choose git
+3. In the repository URL field: https://github.com/adanlessossi/ecs-demo.git
+4. In Credentials, choose the GitHub credentials
+5. Under build triggers, choose Build when a change is pushed to GitHub
+6. Add a build step -> Execute shell
+    #!/bin/bash
+    DOCKER_LOGIN=`aws ecr get-login --no-include-email --region eu-central-1`
+    ${DOCKER_LOGIN}
+7. Choose Add a build step, and then choose Docker Build and Publish
+   Repository name: ecs-demo
+   Docker registry URL: https://780462955238.dkr.ecr.eu-central-1.amazonaws.com/ecs-demo
+   Tag: v_$BUILD_NUMBER
+8.  Add a build step -> Execute shell
+#!/bin/bash
+#Constants
+
+REGION=eu-central-1
+REPOSITORY_NAME=getting-started
+CLUSTER=EcsCluster
+FAMILY=`sed -n 's/.*"family": "\(.*\)",/\1/p' taskdef.json`
+NAME=`sed -n 's/.*"name": "\(.*\)",/\1/p' taskdef.json`
+SERVICE_NAME=${NAME}-service
+
+#Store the repositoryUri as a variable
+REPOSITORY_URI=`aws ecr describe-repositories --repository-names ${REPOSITORY_NAME} --region ${REGION} | jq .repositories[].repositoryUri | tr -d '"'`
+
+#Replace the build number and respository URI placeholders with the constants above
+sed -e "s;%BUILD_NUMBER%;${BUILD_NUMBER};g" -e "s;%REPOSITORY_URI%;${REPOSITORY_URI};g" taskdef.json > ${NAME}-v_${BUILD_NUMBER}.json
+#Register the task definition in the repository
+aws ecs register-task-definition --family ${FAMILY} --cli-input-json file://${WORKSPACE}/${NAME}-v_${BUILD_NUMBER}.json --region ${REGION}
+SERVICES=`aws ecs describe-services --services ${SERVICE_NAME} --cluster ${CLUSTER} --region ${REGION} | jq .failures[]`
+#Get latest revision
+REVISION=`aws ecs describe-task-definition --task-definition ${NAME} --region ${REGION} | jq .taskDefinition.revision`
+
+#Create or update service
+if [ "$SERVICES" == "" ]; then
+  echo "entered existing service"
+  DESIRED_COUNT=`aws ecs describe-services --services ${SERVICE_NAME} --cluster ${CLUSTER} --region ${REGION} | jq .services[].desiredCount`
+  if [ ${DESIRED_COUNT} = "0" ]; then
+    DESIRED_COUNT="1"
+  fi
+  aws ecs update-service --cluster ${CLUSTER} --region ${REGION} --service ${SERVICE_NAME} --task-definition ${FAMILY}:${REVISION} --desired-count ${DESIRED_COUNT}
+else
+  echo "entered new service"
+  aws ecs create-service --service-name ${SERVICE_NAME} --desired-count 1 --task-definition ${FAMILY} --cluster ${CLUSTER} --region ${REGION}
+fi
+9. Save
+
+================================== Check it out =============================================
+1. Log in to the AWS Management Console
+2. Under Compute, choose EC2 Container Service.
+3. Choose the name of the cluster you created earlier. For example, getting-started
+4. On the Services tab, choose the name of the service
+5. On the Task tab, choose the RUNNING task
+6. Under Containers, click the twisty next to the container name.
+7. Under Network bindings, choose the IP address in the External Link column
+    a. You should see the app deployed!
+    b. Every commit will trigger the container service
+
+
+
+
+
+

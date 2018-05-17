@@ -1,0 +1,4 @@
+ecsdemo:
+  image: dockercloud/ecs-demo
+  ports:
+    - "80:80"
