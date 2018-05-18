@@ -15,18 +15,18 @@ aws cloudformation create-stack --template-body file://ecs-jenkins-demo.template
 ======================== Retrieve the public host name of the Jenkins server =====================
 aws ec2 describe-instances --filters "Name=tag-value","Values=DemoJenkinsStack" --region eu-central-1
 
---> ec2-18-196-245-44.eu-central-1.compute.amazonaws.com
-18.196.245.44
+--> ec2-18-195-53-16.eu-central-1.compute.amazonaws.com
+18.195.53.16
 
 
 ========================= SSH into the instance, and =================================
 ==============  then copy the temp password from /var/lib/jenkins/secrets/initialAdminPassword ========0
 ssh -i EcsDemoKeyPair ec2-user@ec2-18-184-207-188.eu-central-1.compute.amazonaws.com
 
--->sudo cat /var/lib/jenkins/secrets/initialAdminPassword --> 357c8245f99b412880f8a05c6c7436a0
+-->sudo cat /var/lib/jenkins/secrets/initialAdminPassword --> d019521d8d854ef9a6bfae77a1158571
 -->logout
 
-357c8245f99b412880f8a05c6c7436a0
+d019521d8d854ef9a6bfae77a1158571
 ========================= Create an Amazon ECR registry ================================
 aws ecr create-repository --repository-name ecs-demo-registry --region eu-central-1
 --> "repositoryArn": "arn:aws:ecr:eu-central-1:780462955238:repository/ecs-demo",
@@ -38,15 +38,17 @@ aws ecr get-login --no-include-email | cmd
 aws ecr get-login --no-include-email
 ============================= Step 4: Configure Jenkins First Run ========================
 1. Paste the public host name of the Jenkins server into a browser.
-----> ec2-18-196-245-44.eu-central-1.compute.amazonaws.com
+----> ec2-18-195-53-16.eu-central-1.compute.amazonaws.com
 
 2. Paste the password
-----> 357c8245f99b412880f8a05c6c7436a0
+----> d019521d8d854ef9a6bfae77a1158571
 3. Choose Install suggested plugins.
 4. Create your first admin user
 5. Save and finish
 
-Jenkins URL: http://ec2-18-196-245-44.eu-central-1.compute.amazonaws.com
+Jenkins URL: http://ec2-18-195-53-16.eu-central-1.compute.amazonaws.com
+
+if its hang, then... http://ec2-18-195-53-16.eu-central-1.compute.amazonaws.com/pluginManager/advanced
 
 ============================== Install Cloudbees Docker build and publish plugin ====================
 1. Go to Manage Jenkins - Manage Plugins -->available
