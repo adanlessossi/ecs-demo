@@ -1,31 +1,34 @@
 -------------------- Create a key-pair --------------------------------------------------------
-aws ec2 create-key-pair --key-name EcsDemoKeyPair --query 'KeyMaterial' --output text > EcsDemoKeyPair.pem
---> chmod 400 EcsDemoKeyPair.pem
+aws ec2 create-key-pair --key-name EcsDemoKey --query 'KeyMaterial' --output text > EcsDemoKeyPair.pem
+--> chmod 400 EcsDemoKey.pem
 
 ======================== Create the Cluster =====================================
-aws cloudformation create-stack --template-body file://ecs-cluster.template --stack-name DemoEcsClusterStack --capabilities CAPABILITY_IAM --tags Key=Name,Value=ECS --region eu-central-1 --parameters ParameterKey=KeyName,ParameterValue=EcsDemoKeyPair ParameterKey=EcsCluster,ParameterValue=getting-started ParameterKey=AsgMaxSize,ParameterValue=2
+aws cloudformation create-stack --template-body file://ecs-cluster.template --stack-name DemoEcsClusterStack --capabilities CAPABILITY_IAM --tags Key=Name,Value=ECS --region eu-central-1 --parameters ParameterKey=KeyName,ParameterValue=EcsDemoKey ParameterKey=EcsCluster,ParameterValue=ecs-demo ParameterKey=AsgMaxSize,ParameterValue=2
 
- "StackId": "arn:aws:cloudformation:eu-central-1:780462955238:stack/DemoEcsClusterStack/f5399c40-47e0-11e8-bca1-50fafb4f9cae"
+"StackId": "arn:aws:cloudformation:eu-central-1:780462955238:stack/DemoEcsClusterStack/033ea100-5a5b-11e8-847f-503f308adbae"
 
 ======================== Create the Jenkins Server =================================
 aws cloudformation create-stack --template-body file://ecs-jenkins-demo.template --stack-name DemoJenkinsStack --capabilities CAPABILITY_IAM --tags Key=Name,Value=Jenkins --region eu-central-1 --parameters ParameterKey=EcsStackName,ParameterValue=DemoEcsClusterStack
 
-"StackId": "arn:aws:cloudformation:eu-central-1:780462955238:stack/DemoJenkinsStack/496f6150-47e1-11e8-a4b3-50a68ae71462"
+ "StackId": "arn:aws:cloudformation:eu-central-1:780462955238:stack/DemoJenkinsStack/abe7a950-5a5b-11e8-9c97-50a68a770ce6"
 
 ======================== Retrieve the public host name of the Jenkins server =====================
 aws ec2 describe-instances --filters "Name=tag-value","Values=DemoJenkinsStack" --region eu-central-1
 
---> ec2-18-194-235-225.eu-central-1.compute.amazonaws.com
+--> ec2-18-196-245-44.eu-central-1.compute.amazonaws.com
+18.196.245.44
+
 
 ========================= SSH into the instance, and =================================
 ==============  then copy the temp password from /var/lib/jenkins/secrets/initialAdminPassword ========0
-ssh -i CICDKeyPair ec2-user@ec2-18-194-235-225.eu-central-1.compute.amazonaws.com
+ssh -i EcsDemoKeyPair ec2-user@ec2-18-184-207-188.eu-central-1.compute.amazonaws.com
 
--->sudo cat /var/lib/jenkins/secrets/initialAdminPassword --> 0ef7d14dc6ad49cf96ea5f08e9f71acd
+-->sudo cat /var/lib/jenkins/secrets/initialAdminPassword --> 357c8245f99b412880f8a05c6c7436a0
 -->logout
 
+357c8245f99b412880f8a05c6c7436a0
 ========================= Create an Amazon ECR registry ================================
-aws ecr create-repository --repository-name ecs-demo --region eu-central-1
+aws ecr create-repository --repository-name ecs-demo-registry --region eu-central-1
 --> "repositoryArn": "arn:aws:ecr:eu-central-1:780462955238:repository/ecs-demo",
 --> "repositoryUri": "780462955238.dkr.ecr.eu-central-1.amazonaws.com/ecs-demo"
 
@@ -35,14 +38,15 @@ aws ecr get-login --no-include-email | cmd
 aws ecr get-login --no-include-email
 ============================= Step 4: Configure Jenkins First Run ========================
 1. Paste the public host name of the Jenkins server into a browser.
-----> ec2-18-194-235-225.eu-central-1.compute.amazonaws.com
+----> ec2-18-196-245-44.eu-central-1.compute.amazonaws.com
 
 2. Paste the password
-----> 0ef7d14dc6ad49cf96ea5f08e9f71acd
+----> 357c8245f99b412880f8a05c6c7436a0
 3. Choose Install suggested plugins.
 4. Create your first admin user
 5. Save and finish
 
+Jenkins URL: http://ec2-18-196-245-44.eu-central-1.compute.amazonaws.com
 
 ============================== Install Cloudbees Docker build and publish plugin ====================
 1. Go to Manage Jenkins - Manage Plugins -->available
@@ -89,7 +93,7 @@ git push -u origin master
 #Constants
 
 REGION=eu-central-1
-REPOSITORY_NAME=getting-started
+REPOSITORY_NAME=ecs-demo
 CLUSTER=EcsCluster
 FAMILY=`sed -n 's/.*"family": "\(.*\)",/\1/p' taskdef.json`
 NAME=`sed -n 's/.*"name": "\(.*\)",/\1/p' taskdef.json`
@@ -123,7 +127,7 @@ fi
 ================================== Check it out =============================================
 1. Log in to the AWS Management Console
 2. Under Compute, choose EC2 Container Service.
-3. Choose the name of the cluster you created earlier. For example, getting-started
+3. Choose the name of the cluster you created earlier. For example, ecs-demo
 4. On the Services tab, choose the name of the service
 5. On the Task tab, choose the RUNNING task
 6. Under Containers, click the twisty next to the container name.

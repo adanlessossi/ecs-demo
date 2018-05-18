@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "AWS CloudFormation template to create resources required to run tasks on an ECS cluster.",
+  "Description": "Creates the resources required to run tasks on an ECS cluster.",
   "Mappings": {
     "VpcCidrs": {
       "vpc": {"cidr" : "10.0.0.0/16"},
